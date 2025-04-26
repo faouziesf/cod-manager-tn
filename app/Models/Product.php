@@ -8,36 +8,33 @@ use Illuminate\Database\Eloquent\Model;
 class Product extends Model
 {
     use HasFactory;
-
+    
     protected $fillable = [
-        'admin_id',
-        'name',
-        'image_path',
-        'price',
-        'stock',
-        'active',
+        'name', 'price', 'stock', 'is_active',
+        // autres champs existants
     ];
-
+    
     protected $casts = [
-        'price' => 'decimal:2',
+        'price' => 'float',
         'stock' => 'integer',
-        'active' => 'boolean',
+        'is_active' => 'boolean',
     ];
-
-    public function admin()
-    {
-        return $this->belongsTo(Admin::class);
-    }
-
+    
     public function orders()
     {
         return $this->belongsToMany(Order::class, 'order_products')
-            ->withPivot('quantity', 'confirmed_price')
+            ->withPivot('quantity', 'price')
             ->withTimestamps();
     }
-
-    public function isInStock()
+    
+    public function decrementStock($quantity = 1)
     {
-        return $this->stock > 0 && $this->active;
+        $this->decrement('stock', $quantity);
+        
+        // Vérifier si le stock est épuisé et notifier les admins si nécessaire
+        if ($this->stock <= 0) {
+            $this->update(['is_active' => false]);
+            // Logique pour suspendre les commandes contenant ce produit
+        }
     }
 }
