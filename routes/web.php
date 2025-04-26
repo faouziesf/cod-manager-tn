@@ -24,12 +24,13 @@ Route::get('/', function () {
 Route::prefix('superadmin')->name('superadmin.')->group(function () {
     // Routes d'authentification accessibles aux invités
     Route::middleware('guest:admin')->group(function() {
-        Route::get('/login', [SuperAdminLoginController::class, 'showLoginForm'])->name('login');
-        Route::post('/login', [SuperAdminLoginController::class, 'login']);
+        // Au lieu des routes d'authentification séparées, utilisez:
+            Route::get('/login', [App\Http\Controllers\Auth\LoginController::class, 'showLoginForm'])->name('login');
+            Route::post('/login', [App\Http\Controllers\Auth\LoginController::class, 'login']);
     });
     
     // Route de déconnexion
-    Route::post('/logout', [SuperAdminLoginController::class, 'logout'])->name('logout');
+            Route::post('/logout', [App\Http\Controllers\Auth\LoginController::class, 'logout'])->name('logout');
     
     // Routes protégées pour SuperAdmin
     Route::middleware(['superadmin'])->group(function () {
@@ -50,12 +51,15 @@ Route::prefix('superadmin')->name('superadmin.')->group(function () {
 Route::prefix('admin')->name('admin.')->group(function () {
     // Routes d'authentification accessibles aux invités
     Route::middleware('guest:admin')->group(function() {
-        Route::get('/login', [AdminLoginController::class, 'showLoginForm'])->name('login');
-        Route::post('/login', [AdminLoginController::class, 'login']);
+        // Au lieu des routes d'authentification séparées, utilisez:
+        Route::get('/login', [App\Http\Controllers\Auth\LoginController::class, 'showLoginForm'])->name('login');
+        Route::post('/login', [App\Http\Controllers\Auth\LoginController::class, 'login']);
+        
+        Route::resource('products', \App\Http\Controllers\Admin\ProductController::class);
     });
     
     // Route de déconnexion
-    Route::post('/logout', [AdminLoginController::class, 'logout'])->name('logout');
+    Route::post('/logout', [App\Http\Controllers\Auth\LoginController::class, 'logout'])->name('logout');
     
     // Routes protégées pour Admin
     Route::middleware(['admin'])->group(function () {
@@ -79,21 +83,30 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
 // Routes d'authentification pour User (Manager/Employee)
 Route::middleware('guest')->group(function() {
-    Route::get('/login', [UserLoginController::class, 'showLoginForm'])->name('login');
-    Route::post('/login', [UserLoginController::class, 'login']);
+    // Au lieu des routes d'authentification séparées, utilisez:
+    Route::get('/login', [App\Http\Controllers\Auth\LoginController::class, 'showLoginForm'])->name('login');
+    Route::post('/login', [App\Http\Controllers\Auth\LoginController::class, 'login']);
 });
-Route::post('/logout', [UserLoginController::class, 'logout'])->name('logout');
+
+Route::post('/logout', [App\Http\Controllers\Auth\LoginController::class, 'logout'])->name('logout');
 
 // Routes pour Manager
 Route::prefix('manager')->name('manager.')->middleware(['manager'])->group(function () {
     Route::get('/dashboard', [ManagerDashboardController::class, 'index'])->name('dashboard');
     
     // Gestion des commandes pour le manager
-    // Route::get('/orders/all', [Manager\OrderController::class, 'all'])->name('orders.all');
-    // Route::get('/orders/standard', [Manager\OrderController::class, 'standard'])->name('orders.standard');
-    // Route::get('/orders/dated', [Manager\OrderController::class, 'dated'])->name('orders.dated');
-    // Route::get('/orders/old', [Manager\OrderController::class, 'old'])->name('orders.old');
-    // Route::get('/orders/search', [Manager\OrderController::class, 'search'])->name('orders.search');
+    Route::get('/orders', [Manager\OrderController::class, 'index'])->name('orders.index');
+    Route::get('/orders/standard', [Manager\OrderController::class, 'standard'])->name('orders.standard');
+    Route::get('/orders/dated', [Manager\OrderController::class, 'dated'])->name('orders.dated');
+    Route::get('/orders/old', [Manager\OrderController::class, 'old'])->name('orders.old');
+    Route::get('/orders/search', [Manager\OrderController::class, 'search'])->name('orders.search');
+    Route::get('/orders/create', [Manager\OrderController::class, 'create'])->name('orders.create');
+    Route::post('/orders', [Manager\OrderController::class, 'store'])->name('orders.store');
+    Route::get('/orders/{order}', [Manager\OrderController::class, 'show'])->name('orders.show');
+    Route::get('/orders/{order}/edit', [Manager\OrderController::class, 'edit'])->name('orders.edit');
+    Route::put('/orders/{order}', [Manager\OrderController::class, 'update'])->name('orders.update');
+    Route::post('/orders/{order}/assign', [Manager\OrderController::class, 'assign'])->name('orders.assign');
+    Route::delete('/orders/{order}', [Manager\OrderController::class, 'destroy'])->name('orders.destroy');
 });
 
 // Routes pour Employee
@@ -101,8 +114,12 @@ Route::prefix('employee')->name('employee.')->middleware(['employee'])->group(fu
     Route::get('/dashboard', [EmployeeDashboardController::class, 'index'])->name('dashboard');
     
     // Gestion des commandes pour l'employé
-    // Route::get('/orders/assigned', [Employee\OrderController::class, 'assigned'])->name('orders.assigned');
-    // Route::get('/orders/standard', [Employee\OrderController::class, 'standard'])->name('orders.standard');
-    // Route::get('/orders/dated', [Employee\OrderController::class, 'dated'])->name('orders.dated');
-    // Route::get('/orders/old', [Employee\OrderController::class, 'old'])->name('orders.old');
+    Route::get('/orders', [Employee\OrderController::class, 'index'])->name('orders.index');
+    Route::get('/orders/standard', [Employee\OrderController::class, 'standard'])->name('orders.standard');
+    Route::get('/orders/dated', [Employee\OrderController::class, 'dated'])->name('orders.dated');
+    Route::get('/orders/old', [Employee\OrderController::class, 'old'])->name('orders.old');
+    Route::get('/orders/search', [Employee\OrderController::class, 'search'])->name('orders.search');
+    Route::get('/orders/{order}', [Employee\OrderController::class, 'show'])->name('orders.show');
+    Route::get('/orders/{order}/process', [Employee\OrderController::class, 'process'])->name('orders.process');
+    Route::put('/orders/{order}/status', [Employee\OrderController::class, 'updateStatus'])->name('orders.update-status');
 });

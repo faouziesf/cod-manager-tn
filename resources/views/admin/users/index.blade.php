@@ -1,19 +1,7 @@
 @extends('layouts.app')
 
-@section('navbar-left')
-    <li class="nav-item">
-        <a class="nav-link" href="{{ route('admin.dashboard') }}">{{ __('Tableau de bord') }}</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link active" href="{{ route('admin.users.index') }}">{{ __('Utilisateurs') }}</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="#">{{ __('Produits') }}</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="#">{{ __('Commandes') }}</a>
-    </li>
-@endsection
+@extends('layouts.sidebar')
+
 
 @section('navbar-right')
     <li class="nav-item dropdown">

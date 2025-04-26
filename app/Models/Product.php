@@ -10,7 +10,18 @@ class Product extends Model
     use HasFactory;
 
     protected $fillable = [
-        'admin_id', 'name', 'image_path',
+        'admin_id',
+        'name',
+        'image_path',
+        'price',
+        'stock',
+        'active',
+    ];
+
+    protected $casts = [
+        'price' => 'decimal:2',
+        'stock' => 'integer',
+        'active' => 'boolean',
     ];
 
     public function admin()
@@ -20,6 +31,13 @@ class Product extends Model
 
     public function orders()
     {
-        return $this->hasMany(Order::class);
+        return $this->belongsToMany(Order::class, 'order_products')
+            ->withPivot('quantity', 'confirmed_price')
+            ->withTimestamps();
+    }
+
+    public function isInStock()
+    {
+        return $this->stock > 0 && $this->active;
     }
 }

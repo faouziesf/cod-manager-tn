@@ -1,13 +1,6 @@
 @extends('layouts.app')
 
-@section('navbar-left')
-    <li class="nav-item">
-        <a class="nav-link" href="{{ route('superadmin.dashboard') }}">{{ __('Tableau de bord') }}</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="{{ route('superadmin.admins.index') }}">{{ __('Administrateurs') }}</a>
-    </li>
-@endsection
+@extends('layouts.sidebar')
 
 @section('content')
     @if($errors->any())

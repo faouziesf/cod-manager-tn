@@ -1,10 +1,6 @@
 @extends('layouts.app')
 
-@section('navbar-left')
-    <li class="nav-item">
-        <a class="nav-link" href="{{ route('superadmin.dashboard') }}">{{ __('Tableau de bord') }}</a>
-    </li>
-@endsection
+@extends('layouts.sidebar')
 
 @section('navbar-right')
     <li class="nav-item dropdown">
