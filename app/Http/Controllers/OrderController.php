@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
+use App\Models\Admin;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -14,20 +15,14 @@ class OrderController extends Controller
 {
     public function standard()
     {
-        $query = Order::where('status', 'new')
-            ->where(function($q) {
-                $q->where('next_attempt_at', '<=', now())
-                   ->orWhereNull('next_attempt_at');
-            })
-            ->where(function($q) {
-                $q->where('daily_attempt_count', '<', DB::raw('max_daily_attempts'))
-                   ->orWhereDate('last_attempt_at', '<', now()->toDateString())
-                   ->orWhereNull('last_attempt_at');
-            });
-            
-        if (!auth()->user()->hasRole('admin') && !auth()->user()->hasRole('manager')) {
+        $admin_id = Auth::user()->admin_id;
+        
+        $query = Order::standard()->where('admin_id', $admin_id);
+        
+        // Si l'utilisateur n'est pas manager, montrer seulement ses commandes
+        if (Auth::user()->role !== 'manager') {
             $query->where(function($q) {
-                $q->where('assigned_to', auth()->id())
+                $q->where('assigned_to', Auth::id())
                   ->orWhereNull('assigned_to');
             });
         }
@@ -36,13 +31,15 @@ class OrderController extends Controller
                        ->orderBy('created_at', 'desc')
                        ->first();
         
-        // Si pas de commande et l'utilisateur n'est ni admin ni manager
+        // Si pas de commande et l'utilisateur n'est pas manager
         $needsMoreOrders = false;
-        if (!$order && !auth()->user()->hasRole('admin') && !auth()->user()->hasRole('manager')) {
+        if (!$order && Auth::user()->role !== 'manager') {
             $needsMoreOrders = true;
         }
         
-        $products = Product::where('is_active', true)->get();
+        $products = Product::where('admin_id', $admin_id)
+                          ->where('active', true)
+                          ->get();
         $regions = tunisianRegions();
         
         return view('orders.standard', compact('order', 'needsMoreOrders', 'products', 'regions'));
@@ -50,21 +47,14 @@ class OrderController extends Controller
     
     public function scheduled()
     {
-        $query = Order::where('status', 'scheduled')
-            ->whereDate('scheduled_date', '<=', now())
-            ->where(function($q) {
-                $q->where('next_attempt_at', '<=', now())
-                   ->orWhereNull('next_attempt_at');
-            })
-            ->where(function($q) {
-                $q->where('daily_attempt_count', '<', DB::raw('max_daily_attempts'))
-                   ->orWhereDate('last_attempt_at', '<', now()->toDateString())
-                   ->orWhereNull('last_attempt_at');
-            });
-            
-        if (!auth()->user()->hasRole('admin') && !auth()->user()->hasRole('manager')) {
+        $admin_id = Auth::user()->admin_id;
+        
+        $query = Order::scheduled()->where('admin_id', $admin_id);
+        
+        // Si l'utilisateur n'est pas manager, montrer seulement ses commandes
+        if (Auth::user()->role !== 'manager') {
             $query->where(function($q) {
-                $q->where('assigned_to', auth()->id())
+                $q->where('assigned_to', Auth::id())
                   ->orWhereNull('assigned_to');
             });
         }
@@ -79,7 +69,9 @@ class OrderController extends Controller
             $reminder = "Rappel : Vous avez un rendez-vous aujourd'hui avec le client " . $order->customer_name;
         }
         
-        $products = Product::where('is_active', true)->get();
+        $products = Product::where('admin_id', $admin_id)
+                          ->where('active', true)
+                          ->get();
         $regions = tunisianRegions();
         
         return view('orders.scheduled', compact('order', 'reminder', 'products', 'regions'));
@@ -87,15 +79,14 @@ class OrderController extends Controller
     
     public function old()
     {
-        $query = Order::where('status', 'old')
-            ->where(function($q) {
-                $q->where('next_attempt_at', '<=', now())
-                   ->orWhereNull('next_attempt_at');
-            });
-            
-        if (!auth()->user()->hasRole('admin') && !auth()->user()->hasRole('manager')) {
+        $admin_id = Auth::user()->admin_id;
+        
+        $query = Order::old()->where('admin_id', $admin_id);
+        
+        // Si l'utilisateur n'est pas manager, montrer seulement ses commandes
+        if (Auth::user()->role !== 'manager') {
             $query->where(function($q) {
-                $q->where('assigned_to', auth()->id())
+                $q->where('assigned_to', Auth::id())
                   ->orWhereNull('assigned_to');
             });
         }
@@ -103,7 +94,9 @@ class OrderController extends Controller
         $order = $query->orderBy('last_attempt_at')
                        ->first();
         
-        $products = Product::where('is_active', true)->get();
+        $products = Product::where('admin_id', $admin_id)
+                          ->where('active', true)
+                          ->get();
         $regions = tunisianRegions();
         
         return view('orders.old', compact('order', 'products', 'regions'));
@@ -111,39 +104,49 @@ class OrderController extends Controller
     
     public function needsVerification()
     {
-        // Vérifier si l'utilisateur a les permissions
-        if (!auth()->user()->hasRole('admin') && !auth()->user()->hasRole('manager')) {
+        // Vérifier si l'utilisateur est admin ou manager
+        if (Auth::user()->role !== 'manager' && !Auth::guard('admin')->check()) {
             return redirect()->route('dashboard')->with('error', 'Vous n\'avez pas les permissions nécessaires.');
         }
         
-        $orders = Order::whereHas('products', function($q) {
-                $q->where('stock', '<=', 0);
-            })
-            ->with('products')
-            ->paginate(20);
+        $admin_id = Auth::user()->admin_id ?? Auth::guard('admin')->id();
+        
+        $orders = Order::where('admin_id', $admin_id)
+                       ->whereHas('products', function($q) {
+                            $q->where('stock', '<=', 0);
+                        })
+                       ->with('products')
+                       ->paginate(20);
         
         return view('orders.needs-verification', compact('orders'));
     }
     
     public function search(Request $request)
     {
+        $admin_id = Auth::user()->admin_id ?? Auth::guard('admin')->id();
+        
         $search = $request->input('search');
         $status = $request->input('status');
         
-        $query = Order::query();
+        $query = Order::where('admin_id', $admin_id);
         
         if ($search) {
             $query->where(function($q) use ($search) {
                 $q->where('customer_name', 'like', "%{$search}%")
-                  ->orWhere('phone1', 'like', "%{$search}%")
-                  ->orWhere('phone2', 'like', "%{$search}%")
-                  ->orWhere('address', 'like', "%{$search}%")
+                  ->orWhere('customer_phone1', 'like', "%{$search}%")
+                  ->orWhere('customer_phone2', 'like', "%{$search}%")
+                  ->orWhere('delivery_address', 'like', "%{$search}%")
                   ->orWhere('id', 'like', "%{$search}%");
             });
         }
         
         if ($status) {
             $query->where('status', $status);
+        }
+        
+        // Si l'utilisateur n'est pas admin ou manager, montrer seulement ses commandes
+        if (Auth::user()->role !== 'manager' && !Auth::guard('admin')->check()) {
+            $query->where('assigned_to', Auth::id());
         }
         
         $orders = $query->orderBy('id', 'desc')->paginate(25);
@@ -153,7 +156,11 @@ class OrderController extends Controller
     
     public function create()
     {
-        $products = Product::where('is_active', true)->get();
+        $admin_id = Auth::user()->admin_id ?? Auth::guard('admin')->id();
+        
+        $products = Product::where('admin_id', $admin_id)
+                          ->where('active', true)
+                          ->get();
         $regions = tunisianRegions();
         
         return view('orders.create', compact('products', 'regions'));
@@ -161,11 +168,13 @@ class OrderController extends Controller
     
     public function store(Request $request)
     {
+        $admin_id = Auth::user()->admin_id ?? Auth::guard('admin')->id();
+        
         $validated = $request->validate([
             'customer_name' => 'nullable|string|max:255',
-            'phone1' => 'required|string|max:20',
-            'phone2' => 'nullable|string|max:20',
-            'address' => 'nullable|string',
+            'customer_phone1' => 'required|string|max:20',
+            'customer_phone2' => 'nullable|string|max:20',
+            'delivery_address' => 'nullable|string',
             'region' => 'nullable|string|max:255',
             'city' => 'nullable|string|max:255',
             'status' => 'required|in:new,confirmed,cancelled,scheduled',
@@ -183,17 +192,19 @@ class OrderController extends Controller
         try {
             // Créer la commande
             $order = Order::create([
+                'admin_id' => $admin_id,
+                'user_id' => Auth::id(),
                 'customer_name' => $validated['customer_name'],
-                'phone1' => $validated['phone1'],
-                'phone2' => $validated['phone2'] ?? null,
-                'address' => $validated['address'] ?? null,
+                'customer_phone1' => $validated['customer_phone1'],
+                'customer_phone2' => $validated['customer_phone2'] ?? null,
+                'delivery_address' => $validated['delivery_address'] ?? null,
                 'region' => $validated['region'] ?? null,
                 'city' => $validated['city'] ?? null,
                 'total_price' => $validated['total_price'],
                 'status' => $validated['status'],
                 'max_attempts' => getSetting('standard_max_attempts', 9),
                 'max_daily_attempts' => getSetting('standard_max_daily_attempts', 3),
-                'assigned_to' => auth()->id(),
+                'assigned_to' => Auth::id(),
             ]);
             
             // Ajouter les produits
@@ -203,16 +214,17 @@ class OrderController extends Controller
                 // Vérifier si le produit existe, sinon le créer automatiquement
                 if (!$product) {
                     $product = Product::create([
+                        'admin_id' => $admin_id,
                         'name' => 'Nouveau produit ' . $productData['id'],
                         'price' => 0,
                         'stock' => 1000000, // 1M par défaut
-                        'is_active' => true,
+                        'active' => true,
                     ]);
                 }
                 
                 $order->products()->attach($product->id, [
                     'quantity' => $productData['quantity'],
-                    'price' => $product->price,
+                    'confirmed_price' => $product->price,
                 ]);
             }
             
@@ -239,8 +251,18 @@ class OrderController extends Controller
     
     public function show(Order $order)
     {
+        // Vérifier que l'utilisateur a accès à cette commande
+        $admin_id = Auth::user()->admin_id ?? Auth::guard('admin')->id();
+        
+        if ($order->admin_id != $admin_id) {
+            return redirect()->route('dashboard')->with('error', 'Vous n\'avez pas accès à cette commande.');
+        }
+        
         $order->load('products', 'histories.user');
-        $products = Product::where('is_active', true)->get();
+        
+        $products = Product::where('admin_id', $admin_id)
+                          ->where('active', true)
+                          ->get();
         $regions = tunisianRegions();
         
         return view('orders.show', compact('order', 'products', 'regions'));
@@ -248,11 +270,18 @@ class OrderController extends Controller
     
     public function update(Request $request, Order $order)
     {
+        // Vérifier que l'utilisateur a accès à cette commande
+        $admin_id = Auth::user()->admin_id ?? Auth::guard('admin')->id();
+        
+        if ($order->admin_id != $admin_id) {
+            return redirect()->route('dashboard')->with('error', 'Vous n\'avez pas accès à cette commande.');
+        }
+        
         $validated = $request->validate([
             'customer_name' => 'required|string|max:255',
-            'phone1' => 'required|string|max:20',
-            'phone2' => 'nullable|string|max:20',
-            'address' => 'required|string',
+            'customer_phone1' => 'required|string|max:20',
+            'customer_phone2' => 'nullable|string|max:20',
+            'delivery_address' => 'required|string',
             'region' => 'required|string|max:255',
             'city' => 'required|string|max:255',
             'products' => 'required|array',
@@ -267,9 +296,9 @@ class OrderController extends Controller
             // Mettre à jour les informations de base
             $order->update([
                 'customer_name' => $validated['customer_name'],
-                'phone1' => $validated['phone1'],
-                'phone2' => $validated['phone2'] ?? null,
-                'address' => $validated['address'],
+                'customer_phone1' => $validated['customer_phone1'],
+                'customer_phone2' => $validated['customer_phone2'] ?? null,
+                'delivery_address' => $validated['delivery_address'],
                 'region' => $validated['region'],
                 'city' => $validated['city'],
                 'total_price' => $validated['total_price'],
@@ -278,9 +307,10 @@ class OrderController extends Controller
             // Mettre à jour les produits
             $order->products()->detach();
             foreach ($validated['products'] as $productData) {
-                $order->products()->attach($productData['id'], [
+                $product = Product::find($productData['id']);
+                $order->products()->attach($product->id, [
                     'quantity' => $productData['quantity'],
-                    'price' => Product::find($productData['id'])->price,
+                    'confirmed_price' => $product->price,
                 ]);
             }
             
@@ -298,6 +328,13 @@ class OrderController extends Controller
     
     public function process(Request $request, Order $order)
     {
+        // Vérifier que l'utilisateur a accès à cette commande
+        $admin_id = Auth::user()->admin_id ?? Auth::guard('admin')->id();
+        
+        if ($order->admin_id != $admin_id) {
+            return redirect()->route('dashboard')->with('error', 'Vous n\'avez pas accès à cette commande.');
+        }
+        
         $validated = $request->validate([
             'action' => 'required|in:confirm,cancel,no_answer,schedule',
             'note' => 'nullable|string',
@@ -308,7 +345,7 @@ class OrderController extends Controller
         switch ($validated['action']) {
             case 'confirm':
                 // Vérifier que tous les champs obligatoires sont remplis
-                if (empty($order->customer_name) || empty($order->address) || empty($order->region) || empty($order->city)) {
+                if (empty($order->customer_name) || empty($order->delivery_address) || empty($order->region) || empty($order->city)) {
                     return back()->with('error', 'Tous les champs clients sont obligatoires pour confirmer une commande')->withInput();
                 }
                 
@@ -349,17 +386,19 @@ class OrderController extends Controller
     
     public function requestMoreOrders()
     {
-        $user = auth()->user();
+        $admin_id = Auth::user()->admin_id;
+        $user_id = Auth::id();
         
         // Trouver les 10 plus anciennes commandes non assignées
-        $unassignedOrders = Order::where('status', 'new')
+        $unassignedOrders = Order::where('admin_id', $admin_id)
+            ->where('status', 'new')
             ->whereNull('assigned_to')
             ->orderBy('created_at')
             ->limit(10)
             ->get();
             
         foreach ($unassignedOrders as $order) {
-            $order->update(['assigned_to' => $user->id]);
+            $order->update(['assigned_to' => $user_id]);
         }
         
         return redirect()->route('orders.standard')
@@ -368,8 +407,8 @@ class OrderController extends Controller
     
     public function import()
     {
-        // Vérifier si l'utilisateur a les permissions
-        if (!auth()->user()->hasRole('admin') && !auth()->user()->hasRole('manager')) {
+        // Vérifier si l'utilisateur est admin ou manager
+        if (Auth::user()->role !== 'manager' && !Auth::guard('admin')->check()) {
             return redirect()->route('dashboard')->with('error', 'Vous n\'avez pas les permissions nécessaires.');
         }
         
@@ -378,16 +417,18 @@ class OrderController extends Controller
     
     public function importCsv(Request $request)
     {
-        // Vérifier si l'utilisateur a les permissions
-        if (!auth()->user()->hasRole('admin') && !auth()->user()->hasRole('manager')) {
+        // Vérifier si l'utilisateur est admin ou manager
+        if (Auth::user()->role !== 'manager' && !Auth::guard('admin')->check()) {
             return redirect()->route('dashboard')->with('error', 'Vous n\'avez pas les permissions nécessaires.');
         }
+        
+        $admin_id = Auth::user()->admin_id ?? Auth::guard('admin')->id();
         
         $request->validate([
             'csv_file' => 'required|file|mimes:csv,txt',
         ]);
         
-        // Logique d'importation CSV à implémenter
+        // Logique d'importation CSV à implémenter ici
         
         return redirect()->route('orders.search')->with('success', 'Commandes importées avec succès!');
     }

@@ -4,13 +4,14 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Setting;
+use Illuminate\Support\Facades\Auth;
 
 class SettingController extends Controller
 {
     public function index()
     {
-        // Vérifier si l'utilisateur a les permissions
-        if (!auth()->user()->hasRole('admin')) {
+        // Vérifier si l'utilisateur est admin
+        if (!Auth::guard('admin')->check()) {
             return redirect()->route('dashboard')->with('error', 'Vous n\'avez pas les permissions nécessaires.');
         }
         
@@ -33,8 +34,8 @@ class SettingController extends Controller
     
     public function update(Request $request)
     {
-        // Vérifier si l'utilisateur a les permissions
-        if (!auth()->user()->hasRole('admin')) {
+        // Vérifier si l'utilisateur est admin
+        if (!Auth::guard('admin')->check()) {
             return redirect()->route('dashboard')->with('error', 'Vous n\'avez pas les permissions nécessaires.');
         }
         
@@ -61,26 +62,26 @@ class SettingController extends Controller
     
     public function importFromWoocommerce()
     {
-        // Vérifier si l'utilisateur a les permissions
-        if (!auth()->user()->hasRole('admin')) {
+        // Vérifier si l'utilisateur est admin
+        if (!Auth::guard('admin')->check()) {
             return redirect()->route('dashboard')->with('error', 'Vous n\'avez pas les permissions nécessaires.');
         }
         
         // Logique d'importation depuis WooCommerce
-        // À implémenter selon vos besoins
+        // À implémenter en fonction de vos besoins
         
         return redirect()->route('settings.index')->with('success', 'Importation depuis WooCommerce effectuée avec succès!');
     }
     
     public function importFromGoogleSheet()
     {
-        // Vérifier si l'utilisateur a les permissions
-        if (!auth()->user()->hasRole('admin')) {
+        // Vérifier si l'utilisateur est admin
+        if (!Auth::guard('admin')->check()) {
             return redirect()->route('dashboard')->with('error', 'Vous n\'avez pas les permissions nécessaires.');
         }
         
         // Logique d'importation depuis Google Sheets
-        // À implémenter selon vos besoins
+        // À implémenter en fonction de vos besoins
         
         return redirect()->route('settings.index')->with('success', 'Importation depuis Google Sheets effectuée avec succès!');
     }

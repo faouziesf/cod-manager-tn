@@ -11,24 +11,29 @@ class Order extends Model
     use HasFactory;
     
     protected $fillable = [
+        'admin_id',
+        'user_id',
         'customer_name',
-        'phone1',
-        'phone2',
-        'address',
+        'customer_phone1',
+        'customer_phone2',
+        'delivery_address',
         'region',
         'city',
-        'total_price',
-        'confirmed_price',
         'status',
+        'callback_date',
+        'current_attempts',
+        'current_daily_attempts',
+        'last_attempt_at',
+        'total_price',
+        'confirmed_total_price',
         'attempt_count',
         'daily_attempt_count',
-        'last_attempt_at',
         'next_attempt_at',
         'scheduled_date',
         'max_attempts',
         'max_daily_attempts',
-        'assigned_to',
-        // autres champs existants
+        'confirmed_price',
+        'assigned_to'
     ];
     
     protected $dates = [
@@ -37,28 +42,40 @@ class Order extends Model
         'last_attempt_at',
         'next_attempt_at',
         'scheduled_date',
+        'callback_date'
     ];
     
     protected $casts = [
         'total_price' => 'float',
+        'confirmed_total_price' => 'float',
         'confirmed_price' => 'float',
     ];
+    
+    public function admin()
+    {
+        return $this->belongsTo(Admin::class);
+    }
+    
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+    
+    public function assignedUser()
+    {
+        return $this->belongsTo(User::class, 'assigned_to');
+    }
     
     public function products()
     {
         return $this->belongsToMany(Product::class, 'order_products')
-            ->withPivot('quantity', 'price')
+            ->withPivot('quantity', 'confirmed_price')
             ->withTimestamps();
     }
     
     public function histories()
     {
         return $this->hasMany(OrderHistory::class);
-    }
-    
-    public function assignedUser()
-    {
-        return $this->belongsTo(User::class, 'assigned_to');
     }
     
     public function addHistory($action, $note = null)
@@ -136,5 +153,51 @@ class Order extends Model
         
         // Ajouter à l'historique
         $this->addHistory('schedule', $note);
+    }
+    
+    // Scopes pour les requêtes
+    public function scopeStandard($query)
+    {
+        return $query->where('status', 'new')
+            ->where(function($q) {
+                $q->where('next_attempt_at', '<=', now())
+                   ->orWhereNull('next_attempt_at');
+            })
+            ->where(function($q) {
+                $q->where('daily_attempt_count', '<', \DB::raw('max_daily_attempts'))
+                   ->orWhereDate('last_attempt_at', '<', now()->toDateString())
+                   ->orWhereNull('last_attempt_at');
+            });
+    }
+    
+    public function scopeScheduled($query)
+    {
+        return $query->where('status', 'scheduled')
+            ->whereDate('scheduled_date', '<=', now())
+            ->where(function($q) {
+                $q->where('next_attempt_at', '<=', now())
+                   ->orWhereNull('next_attempt_at');
+            })
+            ->where(function($q) {
+                $q->where('daily_attempt_count', '<', \DB::raw('max_daily_attempts'))
+                   ->orWhereDate('last_attempt_at', '<', now()->toDateString())
+                   ->orWhereNull('last_attempt_at');
+            });
+    }
+    
+    public function scopeOld($query)
+    {
+        return $query->where('status', 'old')
+            ->where(function($q) {
+                $q->where('next_attempt_at', '<=', now())
+                   ->orWhereNull('next_attempt_at');
+            });
+    }
+    
+    public function scopeNeedsVerification($query)
+    {
+        return $query->whereHas('products', function($q) {
+            $q->where('stock', '<=', 0);
+        });
     }
 }
