@@ -1,6 +1,5 @@
 @extends('layouts.app')
 
-@extends('layouts.sidebar')
 
 @section('navbar-right')
     <li class="nav-item dropdown">

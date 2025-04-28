@@ -110,13 +110,20 @@ class OrderController extends Controller
     
     public function create()
     {
-        $products = Product::where('admin_id', Auth::id())
-            ->where('active', true)
-            ->get();
+        $admin_id = Auth::guard('admin')->id();
+        
+        $products = Product::where('admin_id', $admin_id)
+                        ->where('active', true)
+                        ->get();
+        
+        // Récupérer les utilisateurs appartenant à cet admin
+        $users = User::where('admin_id', $admin_id)
+                    ->where('active', true)
+                    ->get();
         
         $regions = tunisianRegions();
         
-        return view('admin.orders.create', compact('products', 'regions'));
+        return view('admin.orders.create', compact('products', 'users', 'regions'));
     }
     
     public function store(Request $request)

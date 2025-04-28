@@ -71,4 +71,9 @@ class User extends Authenticatable
     {
         return $this->role === 'employee';
     }
+
+    public function assignedOrders()
+    {
+        return $this->hasMany(Order::class, 'assigned_to');
+    }
 }

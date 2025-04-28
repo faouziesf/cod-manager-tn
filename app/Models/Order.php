@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class Order extends Model
 {
@@ -61,6 +62,7 @@ class Order extends Model
         return $this->belongsTo(User::class);
     }
     
+    // Cette méthode est définie deux fois - garder celle-ci et supprimer la seconde
     public function assignedUser()
     {
         return $this->belongsTo(User::class, 'assigned_to');
@@ -81,7 +83,7 @@ class Order extends Model
     public function addHistory($action, $note = null)
     {
         return $this->histories()->create([
-            'user_id' => auth()->id(),
+            'user_id' => auth()->id() ?? auth()->guard('admin')->id(),
             'action' => $action,
             'note' => $note,
         ]);
@@ -155,7 +157,6 @@ class Order extends Model
         $this->addHistory('schedule', $note);
     }
     
-    // Scopes pour les requêtes
     public function scopeStandard($query)
     {
         return $query->where('status', 'new')
@@ -164,7 +165,7 @@ class Order extends Model
                    ->orWhereNull('next_attempt_at');
             })
             ->where(function($q) {
-                $q->where('daily_attempt_count', '<', \DB::raw('max_daily_attempts'))
+                $q->where('daily_attempt_count', '<', DB::raw('max_daily_attempts'))
                    ->orWhereDate('last_attempt_at', '<', now()->toDateString())
                    ->orWhereNull('last_attempt_at');
             });
@@ -179,7 +180,7 @@ class Order extends Model
                    ->orWhereNull('next_attempt_at');
             })
             ->where(function($q) {
-                $q->where('daily_attempt_count', '<', \DB::raw('max_daily_attempts'))
+                $q->where('daily_attempt_count', '<', DB::raw('max_daily_attempts'))
                    ->orWhereDate('last_attempt_at', '<', now()->toDateString())
                    ->orWhereNull('last_attempt_at');
             });
@@ -200,4 +201,5 @@ class Order extends Model
             $q->where('stock', '<=', 0);
         });
     }
+    
 }
