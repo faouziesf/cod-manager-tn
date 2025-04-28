@@ -131,6 +131,10 @@ Route::prefix('manager')->name('manager.')->middleware(['manager'])->group(funct
     // Importation de commandes
     Route::get('/orders/import', [\App\Http\Controllers\Manager\OrderController::class, 'import'])->name('orders.import');
     Route::post('/orders/import-csv', [\App\Http\Controllers\Manager\OrderController::class, 'importCsv'])->name('orders.import-csv');
+    
+    // Gestion des produits (lecture seule)
+    Route::get('/products', [\App\Http\Controllers\Manager\ProductController::class, 'index'])->name('products.index');
+    Route::get('/products/{product}', [\App\Http\Controllers\Manager\ProductController::class, 'show'])->name('products.show');
 });
 
 // Routes pour Employee

@@ -19,6 +19,7 @@
             margin-bottom: 2rem;
         }
     </style>
+    <script src="{{ asset('js/order-management.js') }}" defer></script>
 </head>
 <body>
     <div id="app">
