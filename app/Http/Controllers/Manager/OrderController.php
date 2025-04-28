@@ -22,6 +22,20 @@ class OrderController extends Controller
             
         return view('manager.orders.index', compact('orders'));
     }
+
+    public function dated()
+    {
+        $admin_id = Auth::user()->admin_id;
+        $orders = Order::where('admin_id', $admin_id)
+                       ->where('status', 'scheduled')
+                       ->orderBy('delivery_date', 'asc')
+                       ->paginate(10);
+        
+        return view('manager.orders.dated', [
+            'orders' => $orders,
+            'title' => 'Commandes datées'
+        ]);
+    }
     
     public function standard()
     {
@@ -95,28 +109,41 @@ class OrderController extends Controller
     {
         $admin_id = Auth::user()->admin_id;
         
-        $search = $request->input('search');
-        $status = $request->input('status');
+        // Récupérer les employés pour le formulaire de recherche
+        $employees = User::where('admin_id', $admin_id)
+                        ->where('role', 'employee')
+                        ->get();
         
         $query = Order::where('admin_id', $admin_id);
         
-        if ($search) {
-            $query->where(function($q) use ($search) {
-                $q->where('customer_name', 'like', "%{$search}%")
-                  ->orWhere('customer_phone1', 'like', "%{$search}%")
-                  ->orWhere('customer_phone2', 'like', "%{$search}%")
-                  ->orWhere('delivery_address', 'like', "%{$search}%")
-                  ->orWhere('id', 'like', "%{$search}%");
+        // Appliquer les filtres de recherche
+        if ($request->filled('customer_name')) {
+            $query->where('customer_name', 'like', '%' . $request->input('customer_name') . '%');
+        }
+        
+        if ($request->filled('customer_phone')) {
+            $phone = $request->input('customer_phone');
+            $query->where(function ($q) use ($phone) {
+                $q->where('customer_phone1', 'like', '%' . $phone . '%')
+                  ->orWhere('customer_phone2', 'like', '%' . $phone . '%');
             });
         }
         
-        if ($status) {
-            $query->where('status', $status);
+        if ($request->filled('city')) {
+            $query->where('city', 'like', '%' . $request->input('city') . '%');
+        }
+        
+        if ($request->filled('status')) {
+            $query->where('status', $request->input('status'));
+        }
+        
+        if ($request->filled('user_id')) {
+            $query->where('assigned_to', $request->input('user_id'));
         }
         
         $orders = $query->orderBy('created_at', 'desc')->paginate(25);
         
-        return view('manager.orders.search', compact('orders', 'search', 'status'));
+        return view('manager.orders.search', compact('orders', 'employees'));
     }
     
     public function create()
@@ -127,9 +154,13 @@ class OrderController extends Controller
             ->where('active', true)
             ->get();
         
+        $employees = User::where('admin_id', $admin_id)
+            ->where('role', 'employee')
+            ->get();
+            
         $regions = tunisianRegions();
         
-        return view('manager.orders.create', compact('products', 'regions'));
+        return view('manager.orders.create', compact('products', 'employees', 'regions'));
     }
     
     public function store(Request $request)
@@ -240,10 +271,14 @@ class OrderController extends Controller
         $products = Product::where('admin_id', $admin_id)
             ->where('active', true)
             ->get();
+            
+        $employees = User::where('admin_id', $admin_id)
+            ->where('role', 'employee')
+            ->get();
         
         $regions = tunisianRegions();
         
-        return view('manager.orders.edit', compact('order', 'products', 'regions'));
+        return view('manager.orders.edit', compact('order', 'products', 'employees', 'regions'));
     }
     
     public function update(Request $request, Order $order)
@@ -266,6 +301,7 @@ class OrderController extends Controller
             'products.*.id' => 'required|exists:products,id',
             'products.*.quantity' => 'required|integer|min:1',
             'total_price' => 'required|numeric|min:0',
+            'assigned_to' => 'nullable|exists:users,id',
         ]);
         
         DB::beginTransaction();
@@ -280,6 +316,7 @@ class OrderController extends Controller
                 'region' => $validated['region'],
                 'city' => $validated['city'],
                 'total_price' => $validated['total_price'],
+                'assigned_to' => $validated['assigned_to'] ?? $order->assigned_to,
             ]);
             
             // Mettre à jour les produits

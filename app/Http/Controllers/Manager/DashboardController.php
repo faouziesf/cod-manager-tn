@@ -25,6 +25,9 @@ class DashboardController extends Controller
         $scheduledOrders = Order::where('admin_id', $admin_id)->where('status', 'scheduled')->count();
         $oldOrders = Order::where('admin_id', $admin_id)->where('status', 'old')->count();
         
+        // Les commandes datées sont les mêmes que les commandes programmées (scheduled)
+        $datedOrders = $scheduledOrders;
+        
         // Taux de confirmation
         $confirmationRate = $totalOrders > 0 ? number_format(($confirmedOrders / $totalOrders) * 100, 1) : 0;
         $confirmationRateValue = $totalOrders > 0 ? ($confirmedOrders / $totalOrders) * 100 : 0;
@@ -102,9 +105,10 @@ class DashboardController extends Controller
         
         return view('manager.dashboard', compact(
             'totalOrders', 'newOrders', 'confirmedOrders', 'cancelledOrders',
-            'scheduledOrders', 'oldOrders', 'confirmationRate', 'confirmationRateValue', 'todayOrders',
-            'ordersToVerify', 'dates', 'orderCounts', 'confirmedCounts',
-            'recentOrders', 'popularProducts', 'employeePerformance'
+            'scheduledOrders', 'datedOrders', 'oldOrders', 'confirmationRate', 
+            'confirmationRateValue', 'todayOrders', 'ordersToVerify', 'dates', 
+            'orderCounts', 'confirmedCounts', 'recentOrders', 'popularProducts', 
+            'employeePerformance'
         ));
     }
 }

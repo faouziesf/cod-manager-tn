@@ -116,6 +116,7 @@ Route::prefix('manager')->name('manager.')->middleware(['manager'])->group(funct
     Route::get('/orders', [\App\Http\Controllers\Manager\OrderController::class, 'index'])->name('orders.index');
     Route::get('/orders/standard', [\App\Http\Controllers\Manager\OrderController::class, 'standard'])->name('orders.standard');
     Route::get('/orders/scheduled', [\App\Http\Controllers\Manager\OrderController::class, 'scheduled'])->name('orders.scheduled');
+    Route::get('/orders/dated', [\App\Http\Controllers\Manager\OrderController::class, 'dated'])->name('orders.dated'); // Ajout de la route manquante
     Route::get('/orders/old', [\App\Http\Controllers\Manager\OrderController::class, 'old'])->name('orders.old');
     Route::get('/orders/needs-verification', [\App\Http\Controllers\Manager\OrderController::class, 'needsVerification'])->name('orders.needs-verification');
     Route::get('/orders/search', [\App\Http\Controllers\Manager\OrderController::class, 'search'])->name('orders.search');
