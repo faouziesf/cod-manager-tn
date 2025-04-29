@@ -12,6 +12,9 @@ if (!function_exists('getSetting')) {
 if (!function_exists('setSetting')) {
     function setSetting($key, $value)
     {
+        // S'assurer que la valeur n'est jamais NULL
+        $value = $value === null ? '' : $value;
+        
         return Setting::set($key, $value);
     }
 }
