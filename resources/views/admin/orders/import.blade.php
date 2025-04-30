@@ -1,101 +1,176 @@
-@extends('layouts.app')
+@extends('layouts.admin')
+
+@section('title', 'Importer des commandes')
 
 @section('content')
 <div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>Importation de commandes</h2>
+    <!-- Page Heading -->
+    <div class="d-sm-flex align-items-center justify-content-between mb-4">
+        <h1 class="h3 mb-0 text-gray-800">Importer des commandes</h1>
+        <a href="{{ route('admin.orders.index') }}" class="d-none d-sm-inline-block btn btn-sm btn-secondary shadow-sm">
+            <i class="fas fa-arrow-left fa-sm text-white-50"></i> Retour aux commandes
+        </a>
     </div>
-    
+
+    <!-- Content Row -->
     <div class="row">
-        <div class="col-md-6">
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-white">
-                    <h5 class="mb-0">Importer depuis un fichier CSV</h5>
+        <!-- CSV Import Card -->
+        <div class="col-xl-6 col-lg-6">
+            <div class="card shadow mb-4">
+                <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                    <h6 class="m-0 font-weight-bold text-primary">
+                        <i class="fas fa-file-csv mr-1"></i> Import CSV
+                    </h6>
                 </div>
                 <div class="card-body">
+                    <p class="mb-3">
+                        Téléchargez un fichier CSV contenant vos commandes. Le fichier doit contenir les colonnes suivantes:
+                    </p>
+                    
+                    <div class="alert alert-info mb-3">
+                        <strong>Colonnes requises :</strong> customer_name, customer_phone1, delivery_address, region, city
+                        <br>
+                        <strong>Colonnes facultatives :</strong> customer_phone2, total_price, external_id, external_source, product_name, product_quantity, product_price
+                    </div>
+                    
                     <form action="{{ route('admin.orders.import-csv') }}" method="POST" enctype="multipart/form-data">
                         @csrf
+                        
                         <div class="mb-3">
                             <label for="csv_file" class="form-label">Fichier CSV</label>
-                            <input class="form-control" type="file" id="csv_file" name="csv_file" accept=".csv" required>
-                            <div class="form-text">
-                                Le fichier CSV doit contenir les colonnes suivantes : nom, telephone1, telephone2, adresse, region, ville, produits, quantites, prix_total
-                            </div>
-                        </div>
-                        
-                        <div class="form-check mb-3">
-                            <input class="form-check-input" type="checkbox" id="has_header" name="has_header" checked>
-                            <label class="form-check-label" for="has_header">
-                                Le fichier contient une ligne d'en-tête
-                            </label>
+                            <input type="file" class="form-control @error('csv_file') is-invalid @enderror" id="csv_file" name="csv_file" accept=".csv,.txt" required>
+                            @error('csv_file')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
                         </div>
                         
                         <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-upload"></i> Importer
+                            <i class="fas fa-upload mr-1"></i> Importer
                         </button>
                     </form>
+                    
+                    <hr>
+                    
+                    <div class="mt-3">
+                        <h6 class="font-weight-bold">Modèle CSV</h6>
+                        <p>Téléchargez notre modèle CSV pour vous assurer que votre fichier est correctement formaté.</p>
+                        <a href="{{ route('admin.orders.index') }}?template=csv" class="btn btn-outline-primary btn-sm">
+                            <i class="fas fa-download mr-1"></i> Télécharger le modèle
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
-        
-        <div class="col-md-6">
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-white">
-                    <h5 class="mb-0">Importer depuis WooCommerce</h5>
+
+        <!-- WooCommerce Import Card -->
+        <div class="col-xl-6 col-lg-6">
+            <div class="card shadow mb-4">
+                <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                    <h6 class="m-0 font-weight-bold text-primary">
+                        <i class="fab fa-wordpress mr-1"></i> Import WooCommerce
+                    </h6>
                 </div>
                 <div class="card-body">
-                    <form action="{{ route('admin.settings.import-woocommerce') }}" method="POST">
-                        @csrf
-                        <div class="mb-3">
-                            <label for="woo_status" class="form-label">Statut des commandes</label>
-                            <select class="form-select" id="woo_status" name="woo_status">
-                                <option value="processing">En traitement</option>
-                                <option value="pending">En attente</option>
-                                <option value="on-hold">En attente de paiement</option>
-                            </select>
+                    @if(empty($wooCommerceSettings['api_url']) || empty($wooCommerceSettings['api_key']) || empty($wooCommerceSettings['api_secret']))
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle mr-1"></i>
+                            Configuration WooCommerce incomplète. Veuillez configurer les paramètres WooCommerce dans la section Paramètres.
+                        </div>
+                        <a href="{{ route('admin.settings.index') }}" class="btn btn-warning">
+                            <i class="fas fa-cog mr-1"></i> Configurer WooCommerce
+                        </a>
+                    @else
+                        <p>Importer des commandes depuis votre boutique WooCommerce avec la configuration suivante:</p>
+                        
+                        <div class="table-responsive mb-3">
+                            <table class="table table-bordered">
+                                <tr>
+                                    <th>URL de l'API</th>
+                                    <td>{{ $wooCommerceSettings['api_url'] }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Statut à importer</th>
+                                    <td>{{ $wooCommerceSettings['status_to_import'] }}</td>
+                                </tr>
+                            </table>
                         </div>
                         
-                        <div class="mb-3">
-                            <label for="woo_date_from" class="form-label">Date de début</label>
-                            <input type="date" class="form-control" id="woo_date_from" name="woo_date_from" value="{{ date('Y-m-d', strtotime('-7 days')) }}">
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label for="woo_date_to" class="form-label">Date de fin</label>
-                            <input type="date" class="form-control" id="woo_date_to" name="woo_date_to" value="{{ date('Y-m-d') }}">
-                        </div>
-                        
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-cloud-download"></i> Importer depuis WooCommerce
-                        </button>
-                    </form>
-                </div>
-            </div>
-            
-            <div class="card shadow-sm">
-                <div class="card-header bg-white">
-                    <h5 class="mb-0">Importer depuis Google Sheet</h5>
-                </div>
-                <div class="card-body">
-                    <form action="{{ route('admin.settings.import-google-sheet') }}" method="POST">
-                        @csrf
-                        <div class="mb-3">
-                            <label for="sheet_id" class="form-label">ID de la feuille Google</label>
-                            <input type="text" class="form-control" id="sheet_id" name="sheet_id" value="{{ getSetting('google_sheet_id', '') }}">
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label for="sheet_name" class="form-label">Nom de l'onglet</label>
-                            <input type="text" class="form-control" id="sheet_name" name="sheet_name" value="Commandes">
-                        </div>
-                        
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-cloud-download"></i> Importer depuis Google Sheet
-                        </button>
-                    </form>
+                        <a href="{{ route('admin.import.woocommerce') }}" class="btn btn-primary">
+                            <i class="fas fa-sync mr-1"></i> Synchroniser maintenant
+                        </a>
+                    @endif
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- Recent Imports Row -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow mb-4">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary">Dernières commandes importées</h6>
+                </div>
+                <div class="card-body">
+                    @if(count($lastImportedOrders) > 0)
+                        <div class="table-responsive">
+                            <table class="table table-bordered" width="100%" cellspacing="0">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Client</th>
+                                        <th>Téléphone</th>
+                                        <th>Adresse</th>
+                                        <th>Source</th>
+                                        <th>Date</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($lastImportedOrders as $order)
+                                    <tr>
+                                        <td>{{ $order->id }}</td>
+                                        <td>{{ $order->customer_name }}</td>
+                                        <td>{{ $order->customer_phone1 }}</td>
+                                        <td>{{ $order->delivery_address }}</td>
+                                        <td>
+                                            @if($order->external_source)
+                                                <span class="badge bg-info text-white">{{ $order->external_source }}</span>
+                                            @else
+                                                <span class="badge bg-secondary text-white">CSV</span>
+                                            @endif
+                                        </td>
+                                        <td>{{ $order->created_at->format('d/m/Y H:i') }}</td>
+                                        <td>
+                                            <a href="{{ route('admin.orders.show', $order) }}" class="btn btn-sm btn-info">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="mt-3">
+                            <p>
+                                <span class="font-weight-bold">{{ $recentImports }}</span> commandes importées au cours des 7 derniers jours.
+                            </p>
+                        </div>
+                    @else
+                        <div class="alert alert-info">
+                            Aucune commande n'a été importée récemment.
+                        </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+    </div>
+
 </div>
+@endsection
+
+@section('scripts')
+<script>
+    // Rien pour l'instant
+</script>
 @endsection

@@ -4,61 +4,57 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Facades\Storage;
 
 class Product extends Model
 {
     use HasFactory;
 
     /**
-     * Les attributs qui sont mass assignable.
+     * Les attributs qui sont assignables en masse.
      *
      * @var array<int, string>
      */
     protected $fillable = [
         'admin_id',
-        'external_id',
         'name',
-        'description',
-        'sku',
+        'image_path',
         'price',
         'stock',
-        'image_url',
-        'image_path',
         'active',
+        'external_id',
+        'description',
+        'sku',
         'category',
         'dimensions',
-        'attributes',
+        'attributes'
     ];
 
     /**
-     * Les attributs qui doivent être castés en types natifs.
+     * Les attributs qui doivent être convertis en types natifs.
      *
      * @var array<string, string>
      */
     protected $casts = [
-        'price' => 'float',
+        'price' => 'decimal:2',
         'stock' => 'integer',
         'active' => 'boolean',
-        'dimensions' => 'array',
-        'attributes' => 'array',
     ];
 
     /**
-     * Relation avec Admin
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * Get the admin that owns the product.
      */
-    public function admin()
+    public function admin(): BelongsTo
     {
         return $this->belongsTo(Admin::class);
     }
 
     /**
-     * Relation avec commandes
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
+     * Get the orders that contain this product.
      */
-    public function orders()
+    public function orders(): BelongsToMany
     {
         return $this->belongsToMany(Order::class, 'order_products')
             ->withPivot('quantity', 'confirmed_price')
@@ -66,47 +62,45 @@ class Product extends Model
     }
 
     /**
-     * Accesseur pour le prix formaté
+     * Get the URL of the product image
      *
-     * @return string
+     * @return string|null
      */
-    public function getFormattedPriceAttribute()
+    public function getImageUrlAttribute(): ?string
     {
-        return number_format($this->price, 2) . ' TND';
+        if (!$this->image_path) {
+            return null;
+        }
+
+        return Storage::url($this->image_path);
     }
 
     /**
-     * Accesseur pour obtenir le nom de la catégorie
+     * Get the total sales of this product
      *
-     * @return string
+     * @return int
      */
-    public function getCategoryNameAttribute()
+    public function getTotalSalesAttribute(): int
     {
-        return $this->category ?: 'Non catégorisé';
+        return $this->orders()
+            ->whereIn('status', ['confirmed', 'shipped', 'delivered'])
+            ->sum('order_products.quantity');
     }
 
     /**
-     * Accesseur pour vérifier si le stock est infini
+     * Get the total revenue from this product
      *
-     * @return bool
+     * @return float
      */
-    public function getIsInfiniteStockAttribute()
+    public function getTotalRevenueAttribute(): float
     {
-        return $this->stock === null || $this->stock === 999999;
+        return $this->orders()
+            ->whereIn('status', ['confirmed', 'shipped', 'delivered'])
+            ->sum(\DB::raw('order_products.quantity * IFNULL(order_products.confirmed_price, products.price)'));
     }
 
     /**
-     * Accesseur pour obtenir le stock à afficher
-     *
-     * @return string
-     */
-    public function getDisplayStockAttribute()
-    {
-        return $this->is_infinite_stock ? 'Infini' : $this->stock;
-    }
-
-    /**
-     * Scope pour filtrer les produits actifs
+     * Scope a query to only include active products.
      *
      * @param  \Illuminate\Database\Eloquent\Builder  $query
      * @return \Illuminate\Database\Eloquent\Builder
@@ -117,7 +111,18 @@ class Product extends Model
     }
 
     /**
-     * Scope pour filtrer par catégorie
+     * Scope a query to only include products with stock.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    public function scopeInStock($query)
+    {
+        return $query->where('stock', '>', 0);
+    }
+
+    /**
+     * Scope a query to only include products by category.
      *
      * @param  \Illuminate\Database\Eloquent\Builder  $query
      * @param  string  $category
@@ -126,45 +131,5 @@ class Product extends Model
     public function scopeByCategory($query, $category)
     {
         return $query->where('category', $category);
-    }
-
-    /**
-     * Scope pour filtrer les produits à faible stock
-     *
-     * @param  \Illuminate\Database\Eloquent\Builder  $query
-     * @param  int  $threshold
-     * @return \Illuminate\Database\Eloquent\Builder
-     */
-    public function scopeLowStock($query, $threshold = 10)
-    {
-        return $query->where('stock', '<=', $threshold)
-                    ->where('stock', '>', 0); // Exclure le stock infini
-    }
-
-    /**
-     * Mise à jour du stock
-     *
-     * @param  int  $quantity
-     * @param  string  $operation
-     * @return bool
-     */
-    public function updateStock($quantity, $operation = 'subtract')
-    {
-        // Si le stock est infini, ne pas le modifier
-        if ($this->is_infinite_stock) {
-            return true;
-        }
-
-        if ($operation === 'add') {
-            $this->stock += $quantity;
-        } else {
-            // Vérifier si le stock est suffisant
-            if ($this->stock < $quantity) {
-                return false;
-            }
-            $this->stock -= $quantity;
-        }
-
-        return $this->save();
     }
 }

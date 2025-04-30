@@ -3,355 +3,207 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
 use App\Models\Product;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-
 
 class ProductController extends Controller
 {
     /**
-     * Affiche la liste des produits
+     * Display a listing of the resource.
      *
-     * @return \Illuminate\View\View
+     * @return \Illuminate\Http\Response
      */
     public function index()
     {
-        $products = Product::where('admin_id', Auth::id())
-                        ->orderBy('name')
-                        ->paginate(15);
-
+        $adminId = Auth::guard('admin')->id();
+        $products = Product::where('admin_id', $adminId)
+            ->orderBy('created_at', 'desc')
+            ->paginate(10);
+            
         return view('admin.products.index', compact('products'));
     }
 
     /**
-     * Affiche le formulaire de création d'un produit
+     * Show the form for creating a new resource.
      *
-     * @return \Illuminate\View\View
+     * @return \Illuminate\Http\Response
      */
     public function create()
     {
-        $categories = Product::where('admin_id', Auth::id())
-                        ->whereNotNull('category')
-                        ->distinct()
-                        ->pluck('category')
-                        ->toArray();
-
-        return view('admin.products.create', compact('categories'));
-    }
-
-     /**
-     * Enregistre un nouveau produit
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\RedirectResponse
-     */
-    public function store(Request $request)
-    {
-        // Débogage: Afficher toutes les données reçues
-        \Log::info('Données produit reçues :', $request->all());
-        
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'sku' => 'nullable|string|max:100',
-            'price' => 'required|numeric|min:0',
-            'stock' => 'nullable|integer|min:0',
-            'image' => 'nullable|image|max:2048', // Changé pour accepter l'upload d'image
-            'active' => 'boolean',
-            'category' => 'nullable|string|max:100',
-            'dimensions.weight' => 'nullable|numeric|min:0',
-            'dimensions.length' => 'nullable|numeric|min:0',
-            'dimensions.width' => 'nullable|numeric|min:0',
-            'dimensions.height' => 'nullable|numeric|min:0',
-            'attributes.keys.*' => 'nullable|string|max:100',
-            'attributes.values.*' => 'nullable|string|max:255',
-        ]);
-        
-        // Débogage: Afficher les données validées
-        \Log::info('Données validées :', $validated);
-    
-        try {
-            DB::beginTransaction();
-            
-            // Préparation des dimensions
-            $dimensions = null;
-            if ($request->has('dimensions')) {
-                $dimensions = [
-                    'weight' => $request->input('dimensions.weight'),
-                    'dimensions' => [
-                        'length' => $request->input('dimensions.length'),
-                        'width' => $request->input('dimensions.width'),
-                        'height' => $request->input('dimensions.height')
-                    ]
-                ];
-            }
-            
-            // Préparation des attributs
-            $attributes = [];
-            $attributeKeys = $request->input('attributes.keys', []);
-            $attributeValues = $request->input('attributes.values', []);
-            
-            foreach ($attributeKeys as $index => $key) {
-                if (!empty($key) && isset($attributeValues[$index])) {
-                    $attributes[$key] = $attributeValues[$index];
-                }
-            }
-            
-            // Gestion du stock (infini par défaut si non défini)
-            $stock = $request->has('stock') ? $request->stock : 999999;
-            
-            // Traitement de l'image
-            $imagePath = null;
-            if ($request->hasFile('image')) {
-                $image = $request->file('image');
-                $imagePath = $image->store('products', 'public');
-                \Log::info('Image téléchargée :', ['path' => $imagePath]);
-            }
-            
-            // Création du produit
-            $product = new Product();
-            $product->admin_id = Auth::id();
-            $product->name = $validated['name'];
-            $product->description = $validated['description'] ?? null;
-            $product->sku = $validated['sku'] ?? null;
-            $product->price = $validated['price'];
-            $product->stock = $stock;
-            $product->image_path = $imagePath;
-            $product->active = $request->has('active');
-            $product->category = $validated['category'] ?? null;
-            $product->dimensions = $dimensions;
-            $product->attributes = !empty($attributes) ? $attributes : null;
-            
-            $saved = $product->save();
-            \Log::info('Produit sauvegardé :', ['success' => $saved, 'product_id' => $product->id]);
-            
-            DB::commit();
-            
-            return redirect()->route('admin.products.index')
-                ->with('success', 'Produit créé avec succès');
-                
-        } catch (\Exception $e) {
-            DB::rollBack();
-            \Log::error('Erreur lors de la création du produit: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString()
-            ]);
-            
-            return back()->withInput()
-                ->with('error', 'Erreur lors de la création du produit: ' . $e->getMessage());
-        }
+        return view('admin.products.create');
     }
 
     /**
-     * Affiche les détails d'un produit
+     * Store a newly created resource in storage.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\Response
+     */
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'price' => 'required|numeric|min:0',
+            'stock' => 'required|integer|min:0',
+            'active' => 'nullable|boolean',
+            'sku' => 'nullable|string|max:100',
+            'category' => 'nullable|string|max:100',
+            'description' => 'nullable|string',
+            'dimensions' => 'nullable|string',
+            'attributes' => 'nullable|string',
+            'external_id' => 'nullable|string|max:100',
+            'image' => 'nullable|image|max:2048',
+        ]);
+
+        $product = new Product();
+        $product->admin_id = Auth::guard('admin')->id();
+        $product->name = $validated['name'];
+        $product->price = $validated['price'];
+        $product->stock = $validated['stock'];
+        $product->active = $request->has('active') ? true : false;
+        $product->sku = $validated['sku'] ?? null;
+        $product->category = $validated['category'] ?? null;
+        $product->description = $validated['description'] ?? null;
+        $product->dimensions = $validated['dimensions'] ?? null;
+        $product->attributes = $validated['attributes'] ?? null;
+        $product->external_id = $validated['external_id'] ?? null;
+
+        if ($request->hasFile('image')) {
+            try {
+                // Stocker l'image dans le dossier storage/app/public/products
+                $imagePath = $request->file('image')->store('products', 'public');
+                $product->image_path = $imagePath;
+            } catch (\Exception $e) {
+                // Gérer l'erreur de chargement d'image
+                return redirect()->back()
+                    ->withErrors(['image' => 'Erreur lors du chargement de l\'image: ' . $e->getMessage()])
+                    ->withInput();
+            }
+        }
+
+        $product->save();
+
+        return redirect()->route('admin.products.index')
+            ->with('success', 'Produit créé avec succès.');
+    }
+
+    /**
+     * Display the specified resource.
      *
      * @param  \App\Models\Product  $product
-     * @return \Illuminate\View\View
+     * @return \Illuminate\Http\Response
      */
     public function show(Product $product)
     {
-        // Vérifier que l'utilisateur a accès à ce produit
-        if ($product->admin_id != Auth::id()) {
-            return redirect()->route('admin.dashboard')
-                ->with('error', 'Vous n\'avez pas accès à ce produit');
+        // Vérifier que le produit appartient à l'admin connecté
+        if ($product->admin_id !== Auth::guard('admin')->id() && !Auth::guard('admin')->user()->is_super_admin) {
+            abort(403, 'Accès non autorisé à ce produit');
         }
-
+        
         return view('admin.products.show', compact('product'));
     }
 
     /**
-     * Affiche le formulaire d'édition d'un produit
+     * Show the form for editing the specified resource.
      *
      * @param  \App\Models\Product  $product
-     * @return \Illuminate\View\View
+     * @return \Illuminate\Http\Response
      */
     public function edit(Product $product)
     {
-        // Vérifier que l'utilisateur a accès à ce produit
-        if ($product->admin_id != Auth::id()) {
-            return redirect()->route('admin.dashboard')
-                ->with('error', 'Vous n\'avez pas accès à ce produit');
+        // Vérifier que le produit appartient à l'admin connecté
+        if ($product->admin_id !== Auth::guard('admin')->id() && !Auth::guard('admin')->user()->is_super_admin) {
+            abort(403, 'Accès non autorisé à ce produit');
         }
         
-        $categories = Product::where('admin_id', Auth::id())
-                        ->whereNotNull('category')
-                        ->distinct()
-                        ->pluck('category')
-                        ->toArray();
-
-        return view('admin.products.edit', compact('product', 'categories'));
+        return view('admin.products.edit', compact('product'));
     }
 
     /**
-     * Met à jour un produit
+     * Update the specified resource in storage.
      *
      * @param  \Illuminate\Http\Request  $request
      * @param  \App\Models\Product  $product
-     * @return \Illuminate\Http\RedirectResponse
+     * @return \Illuminate\Http\Response
      */
     public function update(Request $request, Product $product)
     {
-        // Vérifier que l'utilisateur a accès à ce produit
-        if ($product->admin_id != Auth::id()) {
-            return redirect()->route('admin.dashboard')
-                ->with('error', 'Vous n\'avez pas accès à ce produit');
+        // Vérifier que le produit appartient à l'admin connecté
+        if ($product->admin_id !== Auth::guard('admin')->id() && !Auth::guard('admin')->user()->is_super_admin) {
+            abort(403, 'Accès non autorisé à ce produit');
         }
         
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'sku' => 'nullable|string|max:100',
             'price' => 'required|numeric|min:0',
-            'stock' => 'nullable|integer|min:0',
-            'image' => 'nullable|image|max:2048', // Changé pour accepter l'upload d'image
-            'active' => 'boolean',
+            'stock' => 'required|integer|min:0',
+            'active' => 'nullable|boolean',
+            'sku' => 'nullable|string|max:100',
             'category' => 'nullable|string|max:100',
-            'dimensions.weight' => 'nullable|numeric|min:0',
-            'dimensions.length' => 'nullable|numeric|min:0',
-            'dimensions.width' => 'nullable|numeric|min:0',
-            'dimensions.height' => 'nullable|numeric|min:0',
-            'attributes.keys.*' => 'nullable|string|max:100',
-            'attributes.values.*' => 'nullable|string|max:255',
+            'description' => 'nullable|string',
+            'dimensions' => 'nullable|string',
+            'attributes' => 'nullable|string',
+            'external_id' => 'nullable|string|max:100',
+            'image' => 'nullable|image|max:2048',
         ]);
 
-        try {
-            DB::beginTransaction();
-            
-            // Préparation des dimensions
-            $dimensions = null;
-            if ($request->has('dimensions')) {
-                $dimensions = [
-                    'weight' => $request->input('dimensions.weight'),
-                    'dimensions' => [
-                        'length' => $request->input('dimensions.length'),
-                        'width' => $request->input('dimensions.width'),
-                        'height' => $request->input('dimensions.height')
-                    ]
-                ];
-            }
-            
-            // Préparation des attributs
-            $attributes = [];
-            $attributeKeys = $request->input('attributes.keys', []);
-            $attributeValues = $request->input('attributes.values', []);
-            
-            foreach ($attributeKeys as $index => $key) {
-                if (!empty($key) && isset($attributeValues[$index])) {
-                    $attributes[$key] = $attributeValues[$index];
-                }
-            }
-            
-            // Gestion du stock (infini par défaut si non défini ou vide)
-            $stock = $request->has('stock') && $request->stock !== null ? $request->stock : 999999;
-            
-            // Traitement de l'image
-            if ($request->hasFile('image')) {
+        $product->name = $validated['name'];
+        $product->price = $validated['price'];
+        $product->stock = $validated['stock'];
+        $product->active = $request->has('active') ? true : false;
+        $product->sku = $validated['sku'] ?? null;
+        $product->category = $validated['category'] ?? null;
+        $product->description = $validated['description'] ?? null;
+        $product->dimensions = $validated['dimensions'] ?? null;
+        $product->attributes = $validated['attributes'] ?? null;
+        $product->external_id = $validated['external_id'] ?? null;
+
+        if ($request->hasFile('image')) {
+            try {
                 // Supprimer l'ancienne image si elle existe
                 if ($product->image_path) {
                     Storage::disk('public')->delete($product->image_path);
                 }
                 
-                $image = $request->file('image');
-                $imagePath = $image->store('products', 'public');
+                // Stocker la nouvelle image
+                $imagePath = $request->file('image')->store('products', 'public');
                 $product->image_path = $imagePath;
+            } catch (\Exception $e) {
+                return redirect()->back()
+                    ->withErrors(['image' => 'Erreur lors du chargement de l\'image: ' . $e->getMessage()])
+                    ->withInput();
             }
-            
-            // Mise à jour du produit
-            $product->name = $validated['name'];
-            $product->description = $validated['description'] ?? null;
-            $product->sku = $validated['sku'] ?? null;
-            $product->price = $validated['price'];
-            $product->stock = $stock;
-            $product->active = $request->has('active');
-            $product->category = $validated['category'] ?? null;
-            $product->dimensions = $dimensions;
-            $product->attributes = !empty($attributes) ? $attributes : null;
-            
-            $product->save();
-            
-            DB::commit();
-            
-            return redirect()->route('admin.products.show', $product)
-                ->with('success', 'Produit mis à jour avec succès');
-                
-        } catch (\Exception $e) {
-            DB::rollBack();
-            
-            return back()->withInput()
-                ->with('error', 'Erreur lors de la mise à jour du produit: ' . $e->getMessage());
         }
+
+        $product->save();
+
+        return redirect()->route('admin.products.index')
+            ->with('success', 'Produit mis à jour avec succès.');
     }
 
     /**
-     * Supprime un produit
+     * Remove the specified resource from storage.
      *
      * @param  \App\Models\Product  $product
-     * @return \Illuminate\Http\RedirectResponse
+     * @return \Illuminate\Http\Response
      */
     public function destroy(Product $product)
     {
-        // Vérifier que l'utilisateur a accès à ce produit
-        if ($product->admin_id != Auth::id()) {
-            return redirect()->route('admin.dashboard')
-                ->with('error', 'Vous n\'avez pas accès à ce produit');
+        // Vérifier que le produit appartient à l'admin connecté
+        if ($product->admin_id !== Auth::guard('admin')->id() && !Auth::guard('admin')->user()->is_super_admin) {
+            abort(403, 'Accès non autorisé à ce produit');
         }
         
-        try {
-            // Vérifier si le produit est utilisé dans des commandes
-            $usedInOrders = $product->orders()->count() > 0;
-            
-            if ($usedInOrders) {
-                return back()->with('error', 'Ce produit ne peut pas être supprimé car il est utilisé dans des commandes');
-            }
-            
-            // Supprimer l'image si elle existe
-            if ($product->image_path) {
-                Storage::disk('public')->delete($product->image_path);
-            }
-            
-            $product->delete();
-            
-            return redirect()->route('admin.products.index')
-                ->with('success', 'Produit supprimé avec succès');
-                
-        } catch (\Exception $e) {
-            return back()->with('error', 'Erreur lors de la suppression du produit: ' . $e->getMessage());
+        // Supprimer l'image associée si elle existe
+        if ($product->image_path) {
+            Storage::disk('public')->delete($product->image_path);
         }
-    }
+        
+        $product->delete();
 
-    /**
-     * Met à jour le stock d'un produit
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  \App\Models\Product  $product
-     * @return \Illuminate\Http\RedirectResponse
-     */
-    public function updateStock(Request $request, Product $product)
-    {
-        // Vérifier que l'utilisateur a accès à ce produit
-        if ($product->admin_id != Auth::id()) {
-            return redirect()->route('admin.dashboard')
-                ->with('error', 'Vous n\'avez pas accès à ce produit');
-        }
-        
-        $validated = $request->validate([
-            'quantity' => 'required|integer|min:1',
-            'operation' => 'required|in:add,subtract',
-        ]);
-        
-        // Si le produit a un stock infini, expliquer que ce n'est pas nécessaire
-        if ($product->is_infinite_stock) {
-            return back()->with('info', 'Ce produit a un stock infini. Il n\'est pas nécessaire de mettre à jour le stock.');
-        }
-        
-        $result = $product->updateStock($validated['quantity'], $validated['operation']);
-        
-        if ($result) {
-            return back()->with('success', 'Stock mis à jour avec succès');
-        } else {
-            return back()->with('error', 'Erreur lors de la mise à jour du stock. Vérifiez que le stock est suffisant.');
-        }
+        return redirect()->route('admin.products.index')
+            ->with('success', 'Produit supprimé avec succès.');
     }
 }

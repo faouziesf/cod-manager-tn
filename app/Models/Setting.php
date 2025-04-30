@@ -10,27 +10,37 @@ class Setting extends Model
     use HasFactory;
 
     /**
-     * Les attributs qui sont mass assignable.
+     * Les attributs qui sont assignables en masse.
      *
      * @var array<int, string>
      */
     protected $fillable = [
         'key',
-        'value',
+        'value'
     ];
 
     /**
-     * Définit un paramètre dans la base de données
+     * Récupérer un paramètre par sa clé
+     *
+     * @param string $key
+     * @param mixed $default
+     * @return mixed
+     */
+    public static function get(string $key, $default = null)
+    {
+        $setting = self::where('key', $key)->first();
+        return $setting ? $setting->value : $default;
+    }
+
+    /**
+     * Définir ou mettre à jour un paramètre
      *
      * @param string $key
      * @param mixed $value
      * @return Setting
      */
-    public static function set($key, $value)
+    public static function set(string $key, $value): Setting
     {
-        // S'assurer que la valeur n'est jamais NULL
-        $value = $value === null ? '' : $value;
-        
         return self::updateOrCreate(
             ['key' => $key],
             ['value' => $value]
@@ -38,16 +48,12 @@ class Setting extends Model
     }
 
     /**
-     * Récupère un paramètre de la base de données
+     * Récupérer tous les paramètres sous forme de tableau associatif
      *
-     * @param string $key
-     * @param mixed $default
-     * @return mixed
+     * @return array
      */
-    public static function get($key, $default = '')
+    public static function getAllAsArray(): array
     {
-        $setting = self::where('key', $key)->first();
-        
-        return $setting ? $setting->value : $default;
+        return self::all()->pluck('value', 'key')->toArray();
     }
 }

@@ -4,13 +4,20 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
 
 class Order extends Model
 {
     use HasFactory;
-    
+
+    /**
+     * Les attributs qui sont assignables en masse.
+     *
+     * @var array<int, string>
+     */
     protected $fillable = [
         'admin_id',
         'user_id',
@@ -34,172 +41,215 @@ class Order extends Model
         'max_attempts',
         'max_daily_attempts',
         'confirmed_price',
-        'assigned_to'
+        'assigned_to',
+        'external_id',
+        'external_source'
     ];
-    
-    protected $dates = [
-        'created_at',
-        'updated_at',
-        'last_attempt_at',
-        'next_attempt_at',
-        'scheduled_date',
-        'callback_date'
-    ];
-    
+
+    /**
+     * Les attributs qui doivent être convertis en types natifs.
+     *
+     * @var array<string, string>
+     */
     protected $casts = [
-        'total_price' => 'float',
-        'confirmed_total_price' => 'float',
-        'confirmed_price' => 'float',
+        'callback_date' => 'date',
+        'last_attempt_at' => 'datetime',
+        'next_attempt_at' => 'datetime',
+        'scheduled_date' => 'datetime',
+        'total_price' => 'decimal:2',
+        'confirmed_total_price' => 'decimal:2',
+        'confirmed_price' => 'decimal:2',
     ];
-    
-    public function admin()
+
+    /**
+     * Get the admin that owns the order.
+     */
+    public function admin(): BelongsTo
     {
         return $this->belongsTo(Admin::class);
     }
-    
-    public function user()
+
+    /**
+     * Get the user that created the order (if any).
+     */
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
-    
-    // Cette méthode est définie deux fois - garder celle-ci et supprimer la seconde
-    public function assignedUser()
+
+    /**
+     * Get the user that is assigned to the order.
+     */
+    public function assignedTo(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_to');
     }
-    
-    public function products()
+
+    /**
+     * Get the products in this order.
+     */
+    public function products(): BelongsToMany
     {
         return $this->belongsToMany(Product::class, 'order_products')
             ->withPivot('quantity', 'confirmed_price')
             ->withTimestamps();
     }
-    
-    public function histories()
+
+    /**
+     * Get the history entries for this order.
+     */
+    public function histories(): HasMany
     {
         return $this->hasMany(OrderHistory::class);
     }
-    
-    public function addHistory($action, $note = null)
+
+    /**
+     * Déterminer si cette commande peut être tentée aujourd'hui
+     *
+     * @return bool
+     */
+    public function canBeAttemptedToday(): bool
     {
-        return $this->histories()->create([
-            'user_id' => auth()->id() ?? auth()->guard('admin')->id(),
-            'action' => $action,
-            'note' => $note,
-        ]);
-    }
-    
-    public function recordAttempt($action, $note = null)
-    {
-        $this->increment('attempt_count');
-        $this->increment('daily_attempt_count');
-        $this->last_attempt_at = now();
-        
-        // Calculer le prochain temps de tentative en fonction du statut
-        $intervalHours = 2.5; // Par défaut
-        if ($this->status === 'scheduled') {
-            $intervalHours = getSetting('scheduled_attempt_interval', 3.5);
-        } elseif ($this->status === 'old') {
-            $intervalHours = getSetting('old_attempt_interval', 3.5);
-        } else {
-            $intervalHours = getSetting('standard_attempt_interval', 2.5);
+        // Vérifier si le nombre total de tentatives est dépassé
+        if ($this->attempt_count >= $this->max_attempts) {
+            return false;
         }
-        
-        $this->next_attempt_at = now()->addHours($intervalHours);
-        $this->save();
-        
-        // Vérifier si le nombre maximum de tentatives est atteint
-        if ($this->status !== 'old' && $this->attempt_count >= $this->max_attempts) {
-            $this->status = 'old';
+
+        // Vérifier si le nombre de tentatives quotidiennes est dépassé
+        if ($this->daily_attempt_count >= $this->max_daily_attempts) {
+            // Vérifier si les tentatives ont été faites aujourd'hui
+            if ($this->last_attempt_at && $this->last_attempt_at->isToday()) {
+                return false;
+            }
+            
+            // Si la dernière tentative n'est pas aujourd'hui, réinitialiser le compteur quotidien
+            $this->daily_attempt_count = 0;
             $this->save();
         }
-        
-        // Ajouter à l'historique
-        $this->addHistory($action, $note);
+
+        // Vérifier si la commande est programmée pour une date future
+        if ($this->scheduled_date && $this->scheduled_date->isFuture()) {
+            return false;
+        }
+
+        // Vérifier si la prochaine tentative est dans le futur
+        if ($this->next_attempt_at && $this->next_attempt_at->isFuture()) {
+            return false;
+        }
+
+        return true;
     }
-    
-    public function confirm($confirmedPrice = null, $note = null)
+
+    /**
+     * Enregistrer une tentative pour cette commande
+     *
+     * @param string $result  Le résultat de la tentative
+     * @param string|null $note  Note optionnelle
+     * @param int $userId  ID de l'utilisateur qui a effectué la tentative
+     * @return bool  True si la tentative est enregistrée avec succès
+     */
+    public function recordAttempt(string $result, ?string $note, int $userId): bool
     {
-        // Mettre à jour le statut et le prix confirmé
+        // Incrémenter les compteurs de tentatives
+        $this->attempt_count += 1;
+        $this->daily_attempt_count += 1;
+        $this->last_attempt_at = now();
+
+        // Calculer la prochaine tentative en fonction des paramètres
+        $intervalKey = $this->scheduled_date ? 'scheduled_attempt_interval' : 'standard_attempt_interval';
+        $interval = Setting::where('key', $intervalKey)->value('value') ?? 2.5;
+        
+        $this->next_attempt_at = now()->addHours($interval);
+
+        // Mettre à jour le statut en fonction du résultat
+        if ($result === 'confirmed') {
+            $this->status = 'confirmed';
+        } elseif ($result === 'cancelled') {
+            $this->status = 'cancelled';
+        } elseif ($result === 'returned') {
+            $this->status = 'returned';
+        } elseif ($this->attempt_count >= $this->max_attempts) {
+            $this->status = 'cancelled';
+        }
+
+        $saved = $this->save();
+
+        // Créer une entrée d'historique
+        if ($saved) {
+            OrderHistory::create([
+                'order_id' => $this->id,
+                'user_id' => $userId,
+                'action' => 'Tentative #' . $this->attempt_count,
+                'note' => $result . ($note ? ' - ' . $note : '')
+            ]);
+        }
+
+        return $saved;
+    }
+
+    /**
+     * Réinitialiser les tentatives quotidiennes
+     *
+     * @return bool
+     */
+    public function resetDailyAttempts(): bool
+    {
+        $this->daily_attempt_count = 0;
+        return $this->save();
+    }
+
+    /**
+     * Confirmer la commande
+     *
+     * @param float $confirmedPrice  Le prix confirmé
+     * @param string|null $note  Note optionnelle
+     * @param int $userId  ID de l'utilisateur qui a confirmé la commande
+     * @return bool  True si la commande est confirmée avec succès
+     */
+    public function confirm(float $confirmedPrice, ?string $note, int $userId): bool
+    {
         $this->status = 'confirmed';
-        if ($confirmedPrice) {
-            $this->confirmed_price = $confirmedPrice;
-        } else {
-            $this->confirmed_price = $this->total_price;
+        $this->confirmed_price = $confirmedPrice;
+        $saved = $this->save();
+
+        if ($saved) {
+            OrderHistory::create([
+                'order_id' => $this->id,
+                'user_id' => $userId,
+                'action' => 'Confirmation',
+                'note' => 'Prix confirmé: ' . $confirmedPrice . ($note ? ' - ' . $note : '')
+            ]);
         }
-        $this->save();
-        
-        // Décrémenter le stock des produits
-        foreach ($this->products as $product) {
-            $product->decrementStock($product->pivot->quantity);
-        }
-        
-        // Ajouter à l'historique
-        $this->addHistory('confirm', $note);
+
+        return $saved;
     }
-    
-    public function cancel($note)
+
+    /**
+     * Obtenir un tableau des statuts humainement lisibles
+     *
+     * @return array
+     */
+    public static function getStatusLabels(): array
     {
-        $this->status = 'cancelled';
-        $this->save();
-        
-        // Ajouter à l'historique
-        $this->addHistory('cancel', $note);
+        return [
+            'new' => 'Nouvelle',
+            'processing' => 'En traitement',
+            'confirmed' => 'Confirmée',
+            'shipped' => 'Expédiée',
+            'delivered' => 'Livrée',
+            'cancelled' => 'Annulée',
+            'returned' => 'Retournée'
+        ];
     }
-    
-    public function schedule($scheduledDate, $note)
+
+    /**
+     * Obtenir le libellé du statut
+     *
+     * @return string
+     */
+    public function getStatusLabelAttribute(): string
     {
-        $this->status = 'scheduled';
-        $this->scheduled_date = $scheduledDate;
-        $this->save();
-        
-        // Ajouter à l'historique
-        $this->addHistory('schedule', $note);
+        $labels = self::getStatusLabels();
+        return $labels[$this->status] ?? $this->status;
     }
-    
-    public function scopeStandard($query)
-    {
-        return $query->where('status', 'new')
-            ->where(function($q) {
-                $q->where('next_attempt_at', '<=', now())
-                   ->orWhereNull('next_attempt_at');
-            })
-            ->where(function($q) {
-                $q->where('daily_attempt_count', '<', DB::raw('max_daily_attempts'))
-                   ->orWhereDate('last_attempt_at', '<', now()->toDateString())
-                   ->orWhereNull('last_attempt_at');
-            });
-    }
-    
-    public function scopeScheduled($query)
-    {
-        return $query->where('status', 'scheduled')
-            ->whereDate('scheduled_date', '<=', now())
-            ->where(function($q) {
-                $q->where('next_attempt_at', '<=', now())
-                   ->orWhereNull('next_attempt_at');
-            })
-            ->where(function($q) {
-                $q->where('daily_attempt_count', '<', DB::raw('max_daily_attempts'))
-                   ->orWhereDate('last_attempt_at', '<', now()->toDateString())
-                   ->orWhereNull('last_attempt_at');
-            });
-    }
-    
-    public function scopeOld($query)
-    {
-        return $query->where('status', 'old')
-            ->where(function($q) {
-                $q->where('next_attempt_at', '<=', now())
-                   ->orWhereNull('next_attempt_at');
-            });
-    }
-    
-    public function scopeNeedsVerification($query)
-    {
-        return $query->whereHas('products', function($q) {
-            $q->where('stock', '<=', 0);
-        });
-    }
-    
 }

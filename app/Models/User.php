@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class User extends Authenticatable
 {
@@ -43,37 +45,83 @@ class User extends Authenticatable
      */
     protected $casts = [
         'email_verified_at' => 'datetime',
-        'password' => 'hashed',
         'active' => 'boolean',
     ];
 
-    public function admin()
+    /**
+     * Get the admin that owns the user.
+     */
+    public function admin(): BelongsTo
     {
         return $this->belongsTo(Admin::class);
     }
 
-    public function orders()
+    /**
+     * Get the orders assigned to the user.
+     */
+    public function assignedOrders(): HasMany
     {
-        return $this->hasMany(Order::class);
+        return $this->hasMany(Order::class, 'assigned_to');
     }
 
-    public function orderHistories()
+    /**
+     * Get the order histories created by the user.
+     */
+    public function orderHistories(): HasMany
     {
         return $this->hasMany(OrderHistory::class);
     }
 
-    public function isManager()
+    /**
+     * Scope a query to only include active users.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    public function scopeActive($query)
+    {
+        return $query->where('active', true);
+    }
+
+    /**
+     * Scope a query to only include users with a specific role.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @param  string  $role
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    public function scopeWithRole($query, $role)
+    {
+        return $query->where('role', $role);
+    }
+
+    /**
+     * Determine if the user is a manager.
+     *
+     * @return bool
+     */
+    public function isManager(): bool
     {
         return $this->role === 'manager';
     }
 
-    public function isEmployee()
+    /**
+     * Determine if the user is an employee.
+     *
+     * @return bool
+     */
+    public function isEmployee(): bool
     {
         return $this->role === 'employee';
     }
 
-    public function assignedOrders()
+    /**
+     * Determine if the user is active.
+     *
+     * @return bool
+     */
+    public function isActive(): bool
     {
-        return $this->hasMany(Order::class, 'assigned_to');
+        return $this->active;
     }
 }

@@ -5,66 +5,164 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 
 class LoginController extends Controller
 {
+    /**
+     * Afficher le formulaire de connexion générique
+     *
+     * @return \Illuminate\View\View
+     */
     public function showLoginForm()
     {
-        return view('auth.login');
+        // Par défaut, on utilise 'user' comme type d'utilisateur
+        $userType = 'user';
+        
+        // Déterminer le type d'utilisateur en fonction de l'URL
+        $path = request()->path();
+        if (strpos($path, 'admin') !== false) {
+            $userType = 'admin';
+        } elseif (strpos($path, 'manager') !== false) {
+            $userType = 'manager';
+        } elseif (strpos($path, 'employee') !== false) {
+            $userType = 'employee';
+        } elseif (strpos($path, 'superadmin') !== false) {
+            $userType = 'superadmin';
+        }
+        
+        return view('auth.login', compact('userType'));
     }
 
+    /**
+     * Traiter la demande de connexion
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\RedirectResponse
+     *
+     * @throws \Illuminate\Validation\ValidationException
+     */
     public function login(Request $request)
     {
-        $request->validate([
+        $credentials = $request->validate([
             'email' => 'required|email',
-            'password' => 'required|min:6'
+            'password' => 'required|string',
         ]);
 
-        $credentials = $request->only('email', 'password');
+        // Déterminer le garde à utiliser en fonction de l'URL
+        $path = request()->path();
+        $guard = 'web'; // Par défaut
+        $redirectRoute = 'login';
         
-        // Essayer de connecter en tant qu'admin
-        if (Auth::guard('admin')->attempt($credentials)) {
-            $admin = Auth::guard('admin')->user();
+        if (strpos($path, 'admin') !== false) {
+            $guard = 'admin';
+            $redirectRoute = 'admin.dashboard';
+        } elseif (strpos($path, 'superadmin') !== false) {
+            $guard = 'admin'; // SuperAdmin utilise le même garde que Admin
+            $redirectRoute = 'superadmin.dashboard';
+        } elseif (strpos($path, 'manager') !== false || strpos($path, 'employee') !== false) {
+            $guard = 'web';
             
-            // Rediriger selon le type d'admin
-            if ($admin->is_super_admin) {
-                return redirect()->route('superadmin.dashboard');
-            } else {
-                return redirect()->route('admin.dashboard');
-            }
-        }
-        
-        // Essayer de connecter en tant qu'utilisateur
-        if (Auth::attempt($credentials)) {
-            $user = Auth::user();
-            
-            if (!$user->active) {
-                Auth::logout();
-                return back()->withErrors(['email' => 'Votre compte est désactivé.']);
+            // Vérifier si l'utilisateur existe et si son rôle correspond à la route
+            $user = \App\Models\User::where('email', $credentials['email'])->first();
+            if (!$user) {
+                throw ValidationException::withMessages([
+                    'email' => ['Les informations d\'identification fournies ne correspondent pas à nos enregistrements.'],
+                ]);
             }
             
-            if ($user->isManager()) {
-                return redirect()->route('manager.dashboard');
-            } else {
-                return redirect()->route('employee.dashboard');
+            // Vérifier le rôle
+            if (strpos($path, 'manager') !== false && $user->role !== 'manager') {
+                throw ValidationException::withMessages([
+                    'email' => ['Vous n\'avez pas les autorisations nécessaires pour accéder en tant que manager.'],
+                ]);
+            } elseif (strpos($path, 'employee') !== false && $user->role !== 'employee') {
+                throw ValidationException::withMessages([
+                    'email' => ['Vous n\'avez pas les autorisations nécessaires pour accéder en tant qu\'employé.'],
+                ]);
             }
+            
+            // Définir la redirection
+            $redirectRoute = $user->role === 'manager' ? 'manager.dashboard' : 'employee.dashboard';
         }
 
-        // Échec de connexion
-        return back()->withInput($request->only('email'))->withErrors([
-            'email' => 'Ces identifiants ne correspondent pas à nos enregistrements.',
-        ]);
+        // Tentative de connexion
+        if (!Auth::guard($guard)->attempt($credentials, $request->boolean('remember'))) {
+            throw ValidationException::withMessages([
+                'email' => ['Les informations d\'identification fournies ne correspondent pas à nos enregistrements.'],
+            ]);
+        }
+
+        // Vérifier si l'utilisateur est actif
+        $user = Auth::guard($guard)->user();
+        if (!$user->active) {
+            Auth::guard($guard)->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            throw ValidationException::withMessages([
+                'email' => ['Ce compte est désactivé.'],
+            ]);
+        }
+
+        // Si c'est un admin, vérifier aussi la date d'expiration
+        if ($guard === 'admin' && $user->expiry_date && now()->greaterThan($user->expiry_date)) {
+            Auth::guard($guard)->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            throw ValidationException::withMessages([
+                'email' => ['Ce compte a expiré.'],
+            ]);
+        }
+
+        // SuperAdmin spécifique
+        if (strpos($path, 'superadmin') !== false && !$user->is_super_admin) {
+            Auth::guard($guard)->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            throw ValidationException::withMessages([
+                'email' => ['Vous n\'avez pas les autorisations nécessaires pour accéder en tant que Super Admin.'],
+            ]);
+        }
+
+        $request->session()->regenerate();
+
+        return redirect()->intended(route($redirectRoute));
     }
 
+    /**
+     * Déconnecter l'utilisateur
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function logout(Request $request)
     {
-        // Déconnecter de toutes les gardes
-        Auth::guard('admin')->logout();
-        Auth::logout();
+        // Déterminer le garde à utiliser
+        $path = request()->path();
+        $guard = 'web';
+        $redirectRoute = 'login';
         
+        if (strpos($path, 'admin') !== false) {
+            $guard = 'admin';
+            $redirectRoute = 'admin.login';
+        } elseif (strpos($path, 'superadmin') !== false) {
+            $guard = 'admin';
+            $redirectRoute = 'superadmin.login';
+        } elseif (strpos($path, 'manager') !== false) {
+            $guard = 'web';
+            $redirectRoute = 'manager.login';
+        } elseif (strpos($path, 'employee') !== false) {
+            $guard = 'web';
+            $redirectRoute = 'employee.login';
+        }
+
+        Auth::guard($guard)->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return redirect('/login');
+        return redirect()->route($redirectRoute);
     }
 }
